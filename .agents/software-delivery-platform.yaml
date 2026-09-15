@@ -1,0 +1,25 @@
+# Software-delivery-platform config (read by the `.agents/skills/software-delivery-platform` skill).
+# Platform: GitHub, via the `gh` CLI. Auth lives in the gh keychain — never put tokens here.
+
+default_platform: github
+workspace: michal-michaluk        # GitHub owner/org that owns the repos
+
+platforms:
+  github:
+    cli: gh
+    host: github.com
+
+git:
+  base_branch: main               # PR base + origin of the feature branch
+  feature_branch_prefix: feat     # feature branch: <prefix>/<spec-slug>
+  wip_branch_prefix: wip          # unrelated-WIP parking branch: <prefix>/pre-implement-<ts>
+  commit_scope: auto              # auto | repo | subtree
+
+pr:
+  draft: false                    # open the final PR as draft?
+  labels: []                      # labels applied to the final PR
+  include_video: true             # PR body carries the demo video path + public link
+
+# GitHub has no native issue timetracking; record spec-session work in a comment.
+conventions:
+  worklog: comment

@@ -1,0 +1,39 @@
+# Semgrep configuration for legacy-be-c.
+#
+# mosquitto/ is a git submodule, so Semgrep must run with --no-git-ignore to
+# descend into the submodule working tree. Path filtering (build artifacts,
+# vendored dashboard libs, non-runtime trees) lives in the workspace-root
+# .semgrepignore; registry packs are supplied on the command line:
+#
+#   semgrep --config config/security/semgrep.yml \
+#           --config p/security-audit --config p/secrets \
+#           --no-git-ignore .
+#
+# Scan `.` from the workspace root: only then does Semgrep honor the root
+# .semgrepignore (ignore patterns are matched relative to the scan root, so
+# passing explicit subdirectory targets bypasses them).
+#
+# The three noisy p/security-audit C rules
+# (c.lang.security.insecure-use-string-copy-fn / -strtok-fn / -strcat-fn) use
+# bounded buffers in this codebase and are accepted risk; the gate runs with
+# --severity ERROR, so these WARNING-level rules are not gate-failing anyway.
+# c.lang.security.double-free misreads the mutually exclusive preprocessor
+# branches in libcommon/memory_common.c and is excluded from the gate.
+
+rules:
+  - id: legacy-be-c.dashboard.token-in-web-storage
+    languages: [javascript, typescript]
+    message: >-
+      Access/refresh tokens must never be persisted in Web Storage (shared
+      security contract B9). localStorage/sessionStorage is readable by any XSS;
+      keep tokens in memory only.
+    severity: ERROR
+    metadata:
+      category: security
+      confidence: HIGH
+      cwe: "CWE-922: Insecure Storage of Sensitive Information"
+    patterns:
+      - pattern: $STORE.setItem($KEY, ...)
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (?i)^["'`]?(token|jwt|access[_-]?token|refresh[_-]?token|auth|secret|password|bearer|credential)

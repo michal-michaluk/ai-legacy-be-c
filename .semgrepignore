@@ -1,0 +1,28 @@
+# Semgrep target filter for legacy-be-c (gitignore syntax, relative to this file).
+# Semgrep is run from the workspace root; mosquitto/ is a git submodule, so the
+# scan needs --no-git-ignore and relies on this file (not git) for path filtering.
+
+# Build artifacts and downloaded dependencies.
+mosquitto/build/
+mosquitto/build-tests/
+mosquitto/deps/
+
+# Vendored/minified dashboard libraries and generated CSS.
+mosquitto/dashboard/src/lib/
+mosquitto/dashboard/src/tailwind/
+
+# Non-runtime trees: docs, man pages, tests, fuzzing, website.
+mosquitto/doc/
+mosquitto/man/
+mosquitto/misc/
+mosquitto/www/
+mosquitto/test/
+mosquitto/fuzzing/
+mosquitto/examples/
+
+# Workspace-internal agent/runtime files, not product source.
+.agents/
+.pi/
+docs/
+config/
+.git/

@@ -43,4 +43,6 @@ Use these guides when adding or changing tests:
 - Return and handle errors explicitly; do not turn a failed security, network,
   or persistence operation into success.
 - Add a focused test at the boundary where the changed behavior is observed.
+- Write scratch and temporary files under `.agents/tmp/` (create it if
+  missing); never write to the system `/tmp`. It is gitignored.
 - Avoid unrelated formatting or generated-build changes.

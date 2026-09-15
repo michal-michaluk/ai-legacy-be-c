@@ -1,0 +1,9 @@
+# Run-skill runtime state and logs (ephemeral, regenerated on start).
+.agents/runtime/
+
+# Agent scratch space; use instead of the system /tmp.
+.agents/tmp/
+
+# Python bytecode
+__pycache__/
+*.pyc

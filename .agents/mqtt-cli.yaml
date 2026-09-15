@@ -1,0 +1,44 @@
+# Connection catalogue for the mqtt-cli skill (.agents/skills/mqtt-cli).
+#
+# One profile per target. Select with the env name on every command, e.g.
+#   python3 .agents/skills/mqtt-cli/scripts/mqtt.py pub local -t a/b -m hi
+#
+# Never put real passwords here. Use password_env / username_env to name an
+# environment variable that holds the value at run time.
+#
+# Keys per environment:
+#   host, port        broker address (or `unix: /path` for a unix socket)
+#   ws: true          connect over WebSockets
+#   mqtt_version      mqttv31 | mqttv311 | mqttv5
+#   username          literal user (or username_env: VAR)
+#   password          literal pass (or password_env: VAR)
+#   tls: {cafile, capath, cert, key, insecure}
+#   tunnel            shell command that exposes the broker locally; started in
+#                     the background on demand (pub/rr/listen auto-start it)
+#   extra_args: []    extra flags appended verbatim to every client call
+
+default: local
+
+environments:
+  # Native broker from the run skill (run/SKILL.md).
+  local:
+    host: 127.0.0.1
+    port: 1883
+
+  # Broker deployed in a local k3s cluster, reached via a port-forward.
+  k3s:
+    host: 127.0.0.1
+    port: 1883
+    tunnel: kubectl -n mqtt port-forward svc/mosquitto 1883:1883
+    username: dev
+    password_env: MQTT_K3S_PASSWORD
+
+  # A remote broker over TLS. Adjust host/CA/paths for the real target.
+  remote:
+    host: broker.example.com
+    port: 8883
+    mqtt_version: mqttv5
+    username: agent
+    password_env: MQTT_REMOTE_PASSWORD
+    tls:
+      cafile: /etc/ssl/certs/remote-ca.pem

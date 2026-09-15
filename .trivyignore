@@ -1,0 +1,13 @@
+# Trivy ignored findings for legacy-be-c.
+# Format: one finding ID per line (CVE-IDs and misconfiguration IDs such as
+# AVD-DS-0002 are both recognized). Only findings that were reviewed and
+# explicitly accepted belong here; secrets are never ignored.
+
+# Upstream eclipse-mosquitto Dockerfiles (mosquitto/docker/*) are third-party
+# artifacts pulled in through the mosquitto git submodule. This workspace does
+# not own or ship them, and editing upstream files is out of scope. The images
+# run the broker without a USER directive (DS-0002) and the Ubuntu image omits
+# apt --no-install-recommends (DS-0029). Accepted risk pending an upstream fix;
+# re-verify on every mosquitto submodule bump.
+DS-0002
+DS-0029

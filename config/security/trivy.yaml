@@ -1,0 +1,38 @@
+# Trivy configuration for legacy-be-c (mosquitto C broker + Docker + dashboard).
+#
+# Run from the workspace root (mosquitto/ is a git submodule; Trivy descends
+# into it normally):
+#
+#   trivy fs --config config/security/trivy.yaml .
+#
+# Vulnerabilities cover mosquitto/requirements.txt (paho-mqtt, psutil) and any
+# language manifests; secrets cover the whole tree; misconfig covers
+# mosquitto/docker/* Dockerfiles and mosquitto/security/*.apparmor.
+scan:
+  scanners:
+    - vuln
+    - secret
+    - misconfig
+  skip-dirs:
+    - .git
+    - mosquitto/.git
+    - mosquitto/build
+    - mosquitto/build-tests
+    - mosquitto/deps
+    - mosquitto/dashboard/src/lib
+  skip-files:
+    - "**/*.min.js"
+
+# Findings below HIGH are reported only in the manual review, not the gate.
+severity:
+  - HIGH
+  - CRITICAL
+
+# Reviewed and accepted findings (see .trivyignore for justifications).
+ignorefile: .trivyignore
+
+misconfiguration:
+  include-non-failures: false
+
+# Fail (non-zero) on any non-ignored HIGH/CRITICAL finding.
+exit-code: 1
