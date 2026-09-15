@@ -1,0 +1,4 @@
+[submodule "mosquitto"]
+	path = mosquitto
+	url = https://github.com/eclipse-mosquitto/mosquitto.git
+	branch = master
