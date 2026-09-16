@@ -4,6 +4,18 @@
 # Agent scratch space; use instead of the system /tmp.
 .agents/tmp/
 
+# Agent session state (ephemeral).
+.pi/
+.playwright-cli/
+
+# Demo recording artifacts (derived from scenarios.md).
+demo/*.mkv
+demo/*.webm
+demo/.chapters.ffmetadata
+
+# Demo service build output.
+demo/k3s/services/*/target/
+
 # Python bytecode
 __pycache__/
 *.pyc

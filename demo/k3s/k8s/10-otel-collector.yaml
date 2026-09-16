@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: otel-mqtt-demo
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    exporters:
+      # The `debug` exporter logs every batch to stdout, so traces and metrics
+      # are observable with `kubectl logs` (the collector image is shell-less).
+      debug:
+        verbosity: detailed
+      # Forward spans to Jaeger so they can be explored in its UI.
+      otlp/jaeger:
+        endpoint: jaeger:4317
+        tls:
+          insecure: true
+      # Forward spans to OpenObserve (single-binary traces+logs+metrics with a
+      # built-in web UI). The exporter appends /v1/traces to the endpoint.
+      otlphttp/openobserve:
+        endpoint: http://openobserve:5080/api/default
+        headers:
+          Authorization: "Basic YWRtaW5AZGVtby5sb2NhbDpDb21wbGV4cGFzcyMxMjM="
+      file/traces:
+        path: /var/lib/otel/traces.jsonl
+        rotation:
+          max_megabytes: 50
+          max_days: 7
+      file/metrics:
+        path: /var/lib/otel/metrics.jsonl
+        rotation:
+          max_megabytes: 50
+          max_days: 7
+    service:
+      telemetry:
+        logs:
+          level: info
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [debug, file/traces, otlp/jaeger, otlphttp/openobserve]
+        metrics:
+          receivers: [otlp]
+          exporters: [debug, file/metrics]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: otel-mqtt-demo
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: otel-mqtt-demo
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.127.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/otel/config.yaml
+          ports:
+            - containerPort: 4317
+            - containerPort: 4318
+          volumeMounts:
+            - name: otel-config
+              mountPath: /etc/otel
+            - name: otel-data
+              mountPath: /var/lib/otel
+          resources:
+            requests:
+              memory: "96Mi"
+              cpu: "50m"
+      volumes:
+        - name: otel-config
+          configMap:
+            name: otel-collector-config
+        - name: otel-data
+          emptyDir: {}

@@ -1,0 +1,149 @@
+# Two instances of the reference settings microservice. Each instance writes its
+# own config key on a timer; every successful write is published as an MQTT 5
+# notification (with W3C trace context) and both instances receive each other's
+# notifications, continuing the trace.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: settings-service-a
+  namespace: otel-mqtt-demo
+  labels:
+    app: settings-service-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: settings-service-a
+  template:
+    metadata:
+      labels:
+        app: settings-service-a
+    spec:
+      containers:
+        - name: settings-service
+          image: localhost/settings-service-mqtt:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: settings-service-a
+            - name: MQTT_CLIENT_ID
+              value: settings-service-a
+            - name: DATABASE_URL
+              value: postgres://demo:demo@postgres:5432/demo
+            - name: AUTH_ISSUER
+              value: http://keycloak.invalid/realms/demo
+            - name: AUTH_AUDIENCE
+              value: settings-service
+            - name: ALLOWED_ORIGINS
+              value: http://localhost:3000
+            - name: OTEL_HTTP_ENDPOINT
+              value: http://otel-collector:4318
+            - name: MQTT_HOST
+              value: mosquitto
+            - name: MQTT_PORT
+              value: "1883"
+            - name: DEMO_INTERVAL_SECS
+              value: "5"
+            - name: DEMO_TRIGGER_TOKEN
+              value: "demo-token-123"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "30m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: settings-service-a
+  namespace: otel-mqtt-demo
+  labels:
+    app: settings-service-a
+spec:
+  selector:
+    app: settings-service-a
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: settings-service-b
+  namespace: otel-mqtt-demo
+  labels:
+    app: settings-service-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: settings-service-b
+  template:
+    metadata:
+      labels:
+        app: settings-service-b
+    spec:
+      containers:
+        - name: settings-service
+          image: localhost/settings-service-mqtt:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: settings-service-b
+            - name: MQTT_CLIENT_ID
+              value: settings-service-b
+            - name: DATABASE_URL
+              value: postgres://demo:demo@postgres:5432/demo
+            - name: AUTH_ISSUER
+              value: http://keycloak.invalid/realms/demo
+            - name: AUTH_AUDIENCE
+              value: settings-service
+            - name: ALLOWED_ORIGINS
+              value: http://localhost:3000
+            - name: OTEL_HTTP_ENDPOINT
+              value: http://otel-collector:4318
+            - name: MQTT_HOST
+              value: mosquitto
+            - name: MQTT_PORT
+              value: "1883"
+            - name: DEMO_INTERVAL_SECS
+              value: "5"
+            - name: DEMO_TRIGGER_TOKEN
+              value: "demo-token-123"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "30m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: settings-service-b
+  namespace: otel-mqtt-demo
+  labels:
+    app: settings-service-b
+spec:
+  selector:
+    app: settings-service-b
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP

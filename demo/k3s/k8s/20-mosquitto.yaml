@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config
+  namespace: otel-mqtt-demo
+data:
+  mosquitto.conf: |
+    listener 1883 0.0.0.0
+    allow_anonymous true
+    # OTLP/HTTP push of the $SYS metric set to the collector (capability C2).
+    otlp_endpoint http://otel-collector:4318
+    otlp_export_interval 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto
+  namespace: otel-mqtt-demo
+  labels:
+    app: mosquitto
+spec:
+  selector:
+    app: mosquitto
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: 1883
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto
+  namespace: otel-mqtt-demo
+  labels:
+    app: mosquitto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mosquitto
+  template:
+    metadata:
+      labels:
+        app: mosquitto
+    spec:
+      containers:
+        - name: mosquitto
+          # Built from this repo's source with WITH_OTEL=ON (see
+          # demo/k3s/docker/mosquitto-otel.Dockerfile); imported into k3s.
+          image: localhost/mosquitto-otel:dev
+          imagePullPolicy: IfNotPresent
+          args: ["-c", "/mosquitto/config/mosquitto.conf"]
+          ports:
+            - containerPort: 1883
+          volumeMounts:
+            - name: mosquitto-config
+              mountPath: /mosquitto/config
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "20m"
+      volumes:
+        - name: mosquitto-config
+          configMap:
+            name: mosquitto-config

@@ -1,0 +1,27 @@
+# cargo-deny SCA config (ci-cd.md): advisories + licenses + bans gate.
+#
+# NOTE: `rust-version` is NOT a `[targets]` key in cargo-deny 0.19; MSRV is already
+# declared and enforced by Cargo.toml (`rust-version = "1.75"`). The `[targets]`
+# section is only for cross-compilation target-gating, so it is omitted here.
+
+[advisories]
+yanked = "deny"
+# Dev-only transitives via `pact_verifier` (contract-test tooling, never in the
+# production binary — confirmed by `cargo tree -e normal` = 0). These RUSTSEC
+# advisories are all in the pact/dev dependency graph, not the runtime.
+#   - RUSTSEC-2021-0139  ansi_term (unmaintained, via pact_matching)
+#   - RUSTSEC-2020-0095  difference (unmaintained, via pact)
+#   - RUSTSEC-2025-0057  fxhash (unmaintained, via pact)
+#   - RUSTSEC-2023-0071  rsa (Marvin timing sidechannel, via pact's rustls)
+ignore = [
+    "RUSTSEC-2021-0139",
+    "RUSTSEC-2020-0095",
+    "RUSTSEC-2025-0057",
+    "RUSTSEC-2023-0071",
+]
+
+[licenses]
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0", "CDLA-Permissive-2.0"]
+
+[bans]
+multiple-versions = "warn"

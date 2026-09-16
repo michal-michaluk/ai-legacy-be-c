@@ -1,0 +1,15 @@
+# Keep the build context lean — the image only needs Cargo.toml, Cargo.lock,
+# src/, and migrations/ (see Dockerfile COPY lines). The gitignored target/
+# build dir (and any stray artifacts) must never reach the daemon.
+target/
+.git/
+.github/
+hurl/
+k8s/
+pact/
+scripts/
+tests/
+docker/
+*.md
+.env
+.env.*

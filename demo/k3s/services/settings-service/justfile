@@ -1,0 +1,143 @@
+# Local / CI convenience for the reference example (microservice-rust).
+# Migrations are a DEDICATED step — never at app startup (D1/D11).
+# Quality-gate targets A–H map to be-architecture-requirements.md §11.
+
+set dotenv-load := true
+
+# ---------------------------------------------------------------------------
+# Application / dev
+# ---------------------------------------------------------------------------
+
+# Apply migrations to a logical DB (use the DATABASE_URL from .env). Runs
+# `sqlx migrate`, NOT the app (D1/D11).
+migrate:
+	docker build -q -f Dockerfile.sqlx-cli -t sqlx-migrate:latest .
+	docker run --rm -v "$(PWD)/migrations:/migrations" \
+		-e DATABASE_URL=$DATABASE_URL \
+		sqlx-migrate:latest migrate run --source /migrations
+
+# Run the full quality-gate suite (build/check/test/fmt) DB-less first.
+check:
+	cargo fmt --check
+	cargo clippy -- -D warnings
+	cargo build
+
+# Run tests against a disposable Postgres (requires a running DATABASE_URL).
+test:
+	DATABASE_URL="$DATABASE_URL" cargo test
+
+# ---------------------------------------------------------------------------
+# A · Whole-microservice coverage — a measured whole-crate floor, enforced by
+# llvm-cov natively (no custom script). be-arch §11.
+# ---------------------------------------------------------------------------
+# `--all` covers the WHOLE microservice (lib + bins + integration tests), not
+# just the lib unit tests. `pg-integration` ALWAYS on so the coverage sweep
+# matches what pre-commit tests (the DB-backed #[sqlx::test] paths). The
+# DB-backed tests self-start a testcontainer, so no DATABASE_URL is needed.
+#
+# BY-DESIGN-UNTESTED files are excluded from BOTH the measure and the gate
+# (boot/network/config adapters that are not unit-tested and are covered by the
+# pre-push e2e): src/main.rs, src/common/{config,telemetry}.rs, src/auth/jwt.rs,
+# plus src/common/dns.rs whose meaningful path is #[cfg(target_os = "linux")]
+# (musl/scratch DNS) and cannot be exercised from macOS.
+coverage:
+	cargo llvm-cov --all --features pg-integration --ignore-filename-regex 'src/common/(config|telemetry|dns)\.rs|src/main\.rs|src/auth/jwt\.rs' \
+		--fail-under-lines 85 --html
+
+# ---------------------------------------------------------------------------
+# B · SCA — cargo-deny advisories + licenses + bans (ci-cd.md)
+# ---------------------------------------------------------------------------
+deny-advisories:
+	cargo deny check advisories
+
+deny-licenses:
+	cargo deny check licenses
+
+deny-bans:
+	cargo deny check bans
+
+deny:
+	cargo deny check advisories
+	cargo deny check licenses
+	cargo deny check bans
+
+# ---------------------------------------------------------------------------
+# C · Secrets + IaC (Trivy) — Dockerfile & k8s manifests (D2/D3)
+# ---------------------------------------------------------------------------
+trivy-secrets:
+	trivy fs --scanners secret --exit-code 1 .
+
+trivy-iac:
+	trivy fs --scanners config --exit-code 1 .
+
+trivy:
+	trivy fs --scanners secret --exit-code 1 .
+	trivy fs --scanners config --exit-code 1 .
+
+# Image quality — droast lint of every Dockerfile (mirrors microsandbox gates).
+dockerfile-lint:
+	sh -c 'for df in Dockerfile Dockerfile.*; do [ -e "$df" ] && droast "$df" || exit 1; done'
+
+# ---------------------------------------------------------------------------
+# D · Compile-time contracts (static_assertions) — proven by build/test
+# ---------------------------------------------------------------------------
+contracts:
+	cargo test --lib --no-run  # compiles the contracts module; assertions are compile-time
+
+# ---------------------------------------------------------------------------
+# E · Backward-compatibility of the migration (be-arch §11) — DB-backed via a
+#      disposable postgres:16 testcontainer (testcontainers). Self-contained:
+#      no DATABASE_URL, no k3s, no external DB.
+# ---------------------------------------------------------------------------
+backward-compat:
+	cargo test --features pg-integration --test backward_compat
+
+# ---------------------------------------------------------------------------
+# F · Architecture dependency rules (arch test, deterministic)
+# ---------------------------------------------------------------------------
+architecture:
+	cargo test --test architecture_test
+
+# ---------------------------------------------------------------------------
+# G · Pact provider verification of the REST adapter ONLY.
+#      Runs IN-PROCESS inside `cargo test --test pact_contract`: the real axum
+#      router (routes, DTO serde, validation, error taxonomy, security headers)
+#      is built against port doubles (in-memory SettingRepository + JwtValidator
+#      double) and served on an ephemeral port — NO deployment, NO Postgres, NO
+#      Keycloak/JWKS. The committed contract is verified against it.
+# ---------------------------------------------------------------------------
+pact-verify:
+	cargo test --test pact_contract
+
+# ---------------------------------------------------------------------------
+# H · k3s + hurl e2e against the deployed stack (be-arch §11)
+#      Creates a k3s cluster, builds/imports the image, deploys the stack from
+#      k8s/, applies migrations, then runs the committed hurl scenarios.
+# ---------------------------------------------------------------------------
+deploy-local:
+	./scripts/e2e.sh deploy
+
+e2e:
+	./scripts/e2e.sh run
+
+# e2e deploy + hurl in one shot.
+e2e-full:
+	./scripts/e2e.sh all
+
+# PRE-COMMIT: all deterministic gates + ALL tests (incl. pg-integration/testcontainers).
+pre-commit:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
+	cargo test --features pg-integration --all-targets
+	# `pg-integration` on coverage so the measured code matches the tested code
+	# (cargo test above runs with the same feature). Same by-design exclusions +
+	# native --fail-under-lines floor as `just coverage`.
+	cargo llvm-cov --all --features pg-integration --ignore-filename-regex 'src/common/(config|telemetry|dns)\.rs|src/main\.rs|src/auth/jwt\.rs' \
+		--fail-under-lines 85 --html
+
+# PRE-PUSH: pre-commit + image gates (droast/trivy) + k3s e2e (deploy+hurl).
+pre-push: pre-commit
+	dockerfile-lint
+	trivy fs --scanners secret --exit-code 1 .
+	trivy fs --scanners config --exit-code 1 .
+	./scripts/e2e.sh all

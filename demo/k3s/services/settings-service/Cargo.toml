@@ -1,0 +1,107 @@
+[package]
+name = "settings-service"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Tenant-scoped JSON config key->value store — reference microservice-rust example (axum + sqlx, sliced, ports & adapters, DDD, Keycloak, OTel)."
+license = "MIT"
+
+[workspace]
+resolver = "2"
+
+[workspace.lints.clippy]
+too_many_arguments = "allow"
+module_inception = "allow"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Web framework / HTTP
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "set-header"] }
+
+# Persistence — sqlx NON-macro runtime path (`query_as`/`query` + `FromRow`
+# derive): builds/tests with no live DB, no .sqlx/ offline metadata.
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json", "migrate", "derive", "macros"] }
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Serialisation (adapter-local rest.rs only — domain stays serde-free)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Time — RFC-3339 UTC formatting of `Instant` epoch-millis in the REST adapter
+# (`SettingResponse.updated_at`). The domain stays `Instant`-based; only the
+# transport type is a UTC string. `clock` gives `Utc::now`; the format calls
+# used here need only chrono's core `DateTime`/`SecondsFormat`.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+# Config / env
+dotenvy = "0.15"
+
+# Auth (JWKS resource server)
+jsonwebtoken = "9"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# FROM scratch runtime prerequisites (Option 2):
+#  - mimalloc: musl's default malloc is poor for multi-threaded Tokio workloads;
+#    mimalloc is a drop-in `#[global_allocator]` replacement (swap the allocator,
+#    no code change).
+#  - hickory-resolver: pure-Rust DNS so we do NOT depend on /etc/resolv.conf or
+#    /etc/nsswitch.conf (both ABSENT on a FROM scratch image). Enabled with the
+#    `tokio` runtime + `system-config` OFF; we build the resolver explicitly.
+mimalloc = "0.1"
+hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "system-config"] }
+
+# axum 0.7 extractors (FromRequestParts) are async_trait-based
+async-trait = "0.1"
+
+# Observability — tracing + Prometheus metrics; OTLP is proxied via /telemetry to
+# the Collector (deployment §OTel), so no in-process OTLP-grpc SDK is needed.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+prometheus = "0.14"
+
+# Config-change notifications over MQTT 5 (rumqttc) + OTLP span export. The
+# settings core stays adapter-free; both are used only by the `notify` slice.
+rumqttc = { version = "0.25", default-features = false, features = ["use-rustls"] }
+opentelemetry = "0.32"
+opentelemetry_sdk = "0.32"
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
+
+[dev-dependencies]
+
+# Compile-time contract assertions (be-arch §11): the domain model and the
+# service types carry `Send`/`Sync`/`Clone`/`Debug`/`Eq` at compile time, so
+# e.g. `axum` handlers can move them across threads. Verified in
+# src/contracts.rs via test bodies that only need to type-check.
+static_assertions = "1"
+
+# Pact provider verification (in-process, DB-less / IdP-less): the REST adapter
+# is verified against the committed contract with mock ports. The verifier is
+# the canonical pact_verifier crate; pact_models gives the ProviderState type;
+# base64 decodes the contract's bearer-token claims for the validator double.
+pact_verifier = "1.4"
+pact_models = "1.3"
+base64 = "0.22"
+# pact_verifier uses reqwest 0.13 (unified with its transitive dep); the lib
+# uses reqwest 0.12. Rename so the ProviderStateExecutor's `_client` param type
+# matches the verifier's while AppState still uses the lib's 0.12 Client.
+pact_reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["json"] }
+ctor = "0.2"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
+testcontainers = { version = "0.27", features = ["blocking"] }
+
+# Real-Postgres integration tests are opt-in behind the `pg-integration` feature
+# so the default `cargo test` needs no database.
+[features]
+default = []
+pg-integration = []

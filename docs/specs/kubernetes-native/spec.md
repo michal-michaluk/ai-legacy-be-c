@@ -214,7 +214,88 @@ otlp_timeout           10                       # seconds
 An otel-collector with an `otlp` HTTP receiver receives metrics containing
 `mosquitto_broker_messages_received` etc.; a stopped collector does **not** stall the broker.
 
-### 5.1 / 5.3–5.6 — pending
+### 5.3 Trace-context carry convention — documentation + conformance test
+
+**Element type:** documentation / test only — **no broker code** (F7). Tracked as [#5](https://github.com/michal-michaluk/ai-legacy-be-c/issues/5). Consumer/provider-facing convention: [`trace-context-convention.md`](trace-context-convention.md).
+
+#### The convention (de-facto, not ratified)
+
+| Aspect | Value |
+|---|---|
+| Carrier | MQTT 5 **User Properties**, keys written exactly `traceparent` and `tracestate` (lowercase) |
+| Value | **W3C Trace Context v00** (`version-trace-id-parent-id-trace-flags`, e.g. `00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01`); `tracestate` per W3C §3.3 |
+| Broker role | **Transparent carrier** — copies inbound-PUBLISH User Properties to every matching outbound PUBLISH **unmodified**; no parse, no rewrite, no injection, no removal |
+| Protocol | **MQTT 5 only** (A3); MQTT 3.1.1 has no metadata channel |
+| Status | **De-facto convention, not a ratified standard** — the W3C `trace-context-mqtt` draft was **abandoned** (R2); document it as such, never as a standard |
+| Key case | Producers write the exact lowercase keys. W3C's "receivers MUST accept any case" rule applies to **HTTP header names**; MQTT User Property keys are opaque, case-sensitive strings, so consumer-side case tolerance here is **convention only — unverified** against any ratified MQTT source |
+
+This is the Kafka/messaging model (D1/D2/D4): the producer attaches context, the broker carries, the consumer extracts; the broker creates **no spans**. The message-creation context is a client responsibility (see
+[`findings-otel-trace-research.md`](findings-otel-trace-research.md)), and MQTT custom instrumentation must pick a custom `messaging.system` value (no `mqtt` constant exists).
+
+#### Forwarding evidence (F7)
+
+User Properties are stored on `base_msg->data.properties` and re-serialized on every MQTT 5 outbound PUBLISH. The complete delivery-path table in [`findings-trace-passthrough.md`](findings-trace-passthrough.md) proves byte-identical forwarding across:
+
+| Path | Evidence (file:line) |
+|---|---|
+| Normal publish → MQTT 5 subscriber | `src/property_broker.c:159-174`, `src/handle_publish.c:291`, `src/subs.c:101`, `lib/send_publish.c:317-333` |
+| QoS 0 / 1 / 2 | `src/database.c:1395,1404,1417` |
+| Retained (delivered on later subscribe) | store `src/retain.c:203`; delivery `src/retain.c:233-286` |
+| Persistent sessions / queued across restart | `src/persist_write_v5.c:150-190`, `src/persist_read_v5.c:228-235` |
+| Will messages | `src/property_broker.c:94-114`, `src/database.c:903-905` |
+| Bridges (link is MQTT 5) | `lib/send_publish.c:130-180` |
+| Shared vs normal subscriptions | `src/subs.c:100-121` |
+| WebSockets | `src/websockets.c:344` |
+
+Core never adds/removes USER_PROPERTY; only plugins can (`src/plugin_message.c:69-74`).
+
+#### Inherent drops (documented, not worked around)
+
+| Drop | Cause | Evidence |
+|---|---|---|
+| MQTT 3.1.1 subscriber receives **no** properties | whole property block gated on `mosq_p_mqtt5` | `lib/send_publish.c:317` |
+| Subscriber whose negotiated `maximum_packet_size` is exceeded gets the **whole message dropped** (not property-specific) | `MOSQ_ERR_OVERSIZE_PACKET` → message dropped | `lib/send_publish.c:293`, `src/database.c:1396/1409/1422` |
+
+No per-string truncation exists in the forward path — the whole property set is sent, or the whole message is dropped. Persistence nuance: core persistence has no will chunk, so wills survive restart only via the persist plugin — out of scope for C3.
+
+#### Conformance gates
+
+Behaviour is proven by **G-C3.1–G-C3.5** (§6): byte-identical happy case; all delivery paths; MQTT 3.1.1 negative; oversize whole-message drop; and a regression gate that fails if core ever mutates/strips User Properties. Because forwarding is already complete (F7), **no broker code is required (Q5)** — this element is the convention document plus the conformance suite only. This is a **deliberate tightening** of `findings-otel-trace-research.md` implication 3 (which allows optionally removing an invalid `traceparent`): the broker removes nothing, per D1/D4.
+
+### 5.4 Opt-in compile-time flags — build surface
+
+**Element type:** build surface. Tracked as [#6](https://github.com/michal-michaluk/ai-legacy-be-c/issues/6). Recipe: [`docs/arch/feature-flags.md`](../arch/feature-flags.md).
+
+#### Flag set
+
+| Flag | Covers | Default | Status in this plan |
+|---|---|---|---|
+| **`WITH_OTEL`** | The **entire** OpenTelemetry capability: metrics export today; gRPC transport and OTLP log export if/when they land (gRPC is out of scope now — §5.2/D9) | **OFF** | implemented |
+| `WITH_PROMETHEUS` | C1 Prometheus metrics endpoint | OFF | **deferred → §5.1** |
+| `WITH_JSON_LOGGING` | C5 structured JSON logging | OFF | **deferred → §5.5** |
+
+Rules:
+- **No per-transport OTel flag** — gRPC/HTTP are never split out; one `WITH_OTEL` flag owns all of OTel (C4).
+- **No flag for an unimplemented feature** — `WITH_PROMETHEUS` and `WITH_JSON_LOGGING` are defined only when their elements (§5.1/§5.5) land (per §6's C4 "Implemented when" rule).
+- Flags are **independent, default OFF, freely combinable** (C4); C3 needs **no flag** (no code — §5.3).
+
+#### Per-flag contract (`WITH_OTEL`, the implemented flag)
+
+| Aspect | Rule |
+|---|---|
+| Default | **OFF** — zero overhead and byte-identical deployment when off |
+| Dependency rule | **Discovered only when enabled** — the OTLP/HTTP client dependency (libcurl; libcjson already linked) is found/linked inside `if(WITH_OTEL)`; absent dependency → clear configure failure, never silent disable (`feature-flags.md` "Fail configuration clearly"; D9's libcurl choice) |
+| Enabled path | flag defined → guarded source compiled (`#ifdef WITH_OTEL`), OTLP/HTTP JSON exporter + dedicated export thread active (§5.2) |
+| Disabled path | no `WITH_OTEL` definition → no OTel source, no thread, no dependency, no new config keys accepted; **byte-identical `$SYS` output** and existing tests pass; valid disabled build (D11) |
+| Capability report | a `report_features()` line states OTEL on/off at startup (F5, `mosquitto/src/mosquitto.c:303-331`) |
+
+Definition **sites** mirror `WITH_HTTP_API` (F5): `config.mk` (+ `make/broker.mk` `-DWITH_OTEL`), the new `.c` in `src/Makefile` `OBJS`, and `option_env()` + `target_compile_definitions` in `src/CMakeLists.txt` — the two build systems are kept in correspondence (F5/`findings-build-flags.md`). The **dependency rule** deliberately does **not** mirror `WITH_HTTP_API`'s warn-and-disable behaviour (`src/CMakeLists.txt:148-166`); it follows `feature-flags.md`'s fail-fast rule.
+
+#### Gates
+
+Proven by **G-C4.1–G-C4.4** (§6): build matrix on CMake **and** make; zero-overhead symbol/dependency diff empty with flags off (plus byte-identical `$SYS` output and no new config keys, D11); existing suite green; `report_features()` matches the configured set. G-C4.1's full matrix `{none, prometheus, otel_http, json_logging, all}` is only realisable once §5.1/§5.5 land; **in this plan only `{none, otel}` are buildable**.
+
+### 5.1 / 5.5 / 5.6 — pending
 
 To be produced one element at a time per Step 5.
 
@@ -473,3 +554,4 @@ source are designed so they slot in later.
 
 - Spec ticket: [#2](https://github.com/michal-michaluk/ai-legacy-be-c/issues/2)
 - Plan ticket: [#11](https://github.com/michal-michaluk/ai-legacy-be-c/issues/11)
+- Impl: sub-tasks [#12](https://github.com/michal-michaluk/ai-legacy-be-c/issues/12)–[#20](https://github.com/michal-michaluk/ai-legacy-be-c/issues/20), report [#21](https://github.com/michal-michaluk/ai-legacy-be-c/issues/21)

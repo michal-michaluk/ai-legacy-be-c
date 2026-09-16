@@ -17,8 +17,8 @@ redirected, timestamped logs.
 ## Scope
 
 - **In scope:** native, local process management on **macOS + Linux** (POSIX).
-- **Out of scope:** cluster-based (k3s / Kubernetes / Docker) runs. Those are a
-  **separate future skill** (e.g. `run-k3s`) and must not be added here. This
+- **Out of scope:** cluster-based (k3s / Kubernetes / Docker) runs — those are
+  provided by the separate **`run-k3s`** skill (`.agents/skills/run-k3s/`). This
   skill never uses `kubectl`, `helm`, `k3s`, `k8s` manifests or compose.
 
 ## Managed apps

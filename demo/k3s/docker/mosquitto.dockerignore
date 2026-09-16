@@ -1,0 +1,11 @@
+build
+build-tests
+buildtest.py
+.git
+.gitignore
+.github
+dashboard
+doc
+man
+fuzzing
+installer

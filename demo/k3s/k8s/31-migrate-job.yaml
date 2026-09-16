@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: otel-mqtt-demo
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app: db-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -h postgres -U demo -d demo; do
+                echo "waiting for postgres..."; sleep 2;
+              done
+              for f in /sql/*.sql; do
+                echo "applying $f"; psql -h postgres -U demo -d demo -f "$f";
+              done
+              echo "migrations complete"
+          env:
+            - name: PGPASSWORD
+              value: demo
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+      volumes:
+        - name: sql
+          configMap:
+            name: postgres-init

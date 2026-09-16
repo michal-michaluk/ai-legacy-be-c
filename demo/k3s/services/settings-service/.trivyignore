@@ -1,0 +1,26 @@
+# Accepted / deliberate findings for the microservice-rust reference example.
+# Each entry is the MISCONFIG ID; a trailing comment explains why it is accepted.
+#
+# KSV-0020 / KSV-0021: runAsUser/runAsGroup must be "> 10000". This is a
+#   version-specific Trivy recommendation. The blueprint (deployment D3) and the
+#   Dockerfile deliberately use the conventional non-root UID 1000 for a minimal,
+#   portable reference image — the security property (non-root, no escalation)
+#   is satisfied and does not require an arbitrary host-UID offset.
+KSV-0020
+KSV-0021
+# KSV-0013: the base deployment sets image `settings-service:latest`. The tag is
+#   supplied by the deploy step that builds/imports the image into the k3d
+#   cluster; a fully-pinned digest is not meaningful for a local reference
+#   example where the image is built from source at deploy time (it is NOT a
+#   production manifest — see ci-cd.md D10).
+KSV-0013
+# KSV-0110: base deployment/Job omit metadata.namespace. The k3d overlay
+#   (`k8s/overlays/k3d/kustomization.yaml`) sets `namespace: settings`, so the
+#   workload does NOT land in `default`; the base manifest is intentionally
+#   namespace-agnostic.
+KSV-0110
+# KSV-0125: third-party infra images (`postgres:16-alpine`, `launchbadge/sqlx-cli`,
+#   `otel/opentelemetry-collector-contrib`) come from public Docker Hub. They are
+#   used only in the local k3d e2e stack, not in a production release path; a
+#   private-registry allow-list does not apply to a local reference cluster.
+KSV-0125
