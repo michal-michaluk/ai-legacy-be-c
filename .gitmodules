@@ -1,4 +1,4 @@
 [submodule "mosquitto"]
 	path = mosquitto
-	url = https://github.com/eclipse-mosquitto/mosquitto.git
-	branch = master
+	url = https://github.com/michal-michaluk/mosquitto.git
+	branch = feat/kubernetes-native-otel
